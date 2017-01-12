@@ -1,4 +1,3 @@
-activator-akka-scala-seed
-=========================
+# akka-cluster-sharding-example
 
-A minimal seed template for an Akka with Scala build 
+An example to illustrate akka.cluster.sharding usage 
