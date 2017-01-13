@@ -2,23 +2,24 @@ package com.example
 
 import akka.actor._
 import akka.cluster.sharding.{ClusterSharding, ClusterShardingSettings, ShardRegion}
-
+import com.typesafe.config.ConfigFactory
+import Counter.{extractShardId, extractEntityId}
 
 object ApplicationMain extends App {
-  val system = ActorSystem("clusterio")
-  val extractEntityId: ShardRegion.ExtractEntityId = {
-    case EntityEnvelope(id, payload) ⇒ (id.toString, payload)
-    case msg @ Get(id)               ⇒ (id.toString, msg)
+  Seq("2551", "2552", "0") foreach { port =>
+    // Override the configuration of the port
+    val config = ConfigFactory
+      .parseString("akka.remote.netty.tcp.port=" + port)
+      .withFallback(ConfigFactory.load())
+
+    // Create an Akka system
+    val system = ActorSystem("ClusterSystem", config)
+
+    ClusterSharding(system).start(
+      typeName = "Counter",
+      entityProps = Props[Counter],
+      settings = ClusterShardingSettings(system),
+      extractEntityId = extractEntityId,
+      extractShardId = extractShardId)
   }
-  val extractShardId: ShardRegion.ExtractShardId = {
-    case EntityEnvelope(id, _) ⇒ (id % numberOfShards).toString
-    case Get(id)               ⇒ (id % numberOfShards).toString
-  }
-  val numberOfShards = 20
-  val counterRegion: ActorRef = ClusterSharding(system).start(
-    typeName = "Counter",
-    entityProps = Props[Counter],
-    settings = ClusterShardingSettings(system),
-    extractEntityId = extractEntityId,
-    extractShardId = extractShardId)
 }
