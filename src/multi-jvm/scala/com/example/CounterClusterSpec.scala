@@ -72,10 +72,10 @@ class CounterClusterSpec extends MultiNodeSpec(CounterClusterSpec)
         val counterRegion = ClusterSharding(system).shardRegion(Counter.shardName)
 
         // Increment Counter 5 times
-        repeatMsg(5, counterRegion, Counter.Increment("a"))
+        repeatMsg(5, counterRegion, Counter.Increment("counterA"))
 
         // Check Counter value
-        counterRegion ! Counter.Get("a")
+        counterRegion ! Counter.Get("counterA")
         expectMsg(5)
       }
 
@@ -84,11 +84,11 @@ class CounterClusterSpec extends MultiNodeSpec(CounterClusterSpec)
         awaitAssert {
           within(1.second) {
             // Check Counter value
-            counterRegion ! Counter.Get("a")
+            counterRegion ! Counter.Get("counterA")
             expectMsg(5)
 
             // Increment Counter 5 times
-            repeatMsg(5, counterRegion, Counter.Increment("a"))
+            repeatMsg(5, counterRegion, Counter.Increment("counterA"))
           }
         }
       }
@@ -100,7 +100,7 @@ class CounterClusterSpec extends MultiNodeSpec(CounterClusterSpec)
 
         awaitAssert {
           within(1.second) {
-            counterRegion ! Counter.Get("a")
+            counterRegion ! Counter.Get("counterA")
             expectMsg(10)
           }
         }
@@ -111,13 +111,64 @@ class CounterClusterSpec extends MultiNodeSpec(CounterClusterSpec)
 
         awaitAssert {
           within(1.second) {
-            counterRegion ! Counter.Get("a")
+            counterRegion ! Counter.Get("counterA")
             expectMsg(10)
           }
         }
       }
 
       enterBarrier("after-3")
+    }
+
+    "Should restore entity from a persistent state" in within(15.seconds) {
+      runOn(node1) {
+        val counterRegion = ClusterSharding(system).shardRegion(Counter.shardName)
+
+        // Stopping test counter
+        counterRegion ! Counter.Stop("counterA")
+
+        enterBarrier("after-4")
+      }
+
+      runOn(node2) {
+        enterBarrier("after-4")
+
+        val counterRegion = ClusterSharding(system).shardRegion(Counter.shardName)
+
+        counterRegion ! Counter.Increment("counterA")
+
+        enterBarrier("after-5")
+      }
+
+      runOn(node1) {
+        enterBarrier("after-5")
+
+        val counterRegion = ClusterSharding(system).shardRegion(Counter.shardName)
+
+        awaitAssert {
+          within(1.second) {
+            // Stopping test counter
+            counterRegion ! Counter.Get("counterA")
+            expectMsg(11)
+          }
+        }
+
+        enterBarrier("after-6")
+      }
+
+      runOn(node2) {
+        val counterRegion = ClusterSharding(system).shardRegion(Counter.shardName)
+
+        awaitAssert {
+          within(1.second) {
+            // Stopping test counter
+            counterRegion ! Counter.Get("counterA")
+            expectMsg(11)
+          }
+        }
+
+        enterBarrier("after-6")
+      }
     }
   }
 }

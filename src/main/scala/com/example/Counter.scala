@@ -11,10 +11,10 @@ class Counter(id: String) extends PersistentActor {
   import Counter._
   import ShardRegion.Passivate
 
-  context.setReceiveTimeout(120.seconds)
+  context.setReceiveTimeout(10.seconds)
 
   // self.path.name is the entity identifier (utf-8 URL-encoded)
-  override def persistenceId: String = "CounterPersID-" + self.path.name
+  override def persistenceId: String = "CounterPersID" + self.path.name
 
   var count = 0
 
@@ -22,6 +22,9 @@ class Counter(id: String) extends PersistentActor {
     count += event.delta
 
   override def receiveRecover: Receive = {
+    case SnapshotOffer(metadata, state: Int) =>
+      println(s"SNAPSHOT OFFER: $persistenceId!!")
+      count = state
     case evt: CounterChanged => updateState(evt)
   }
 
@@ -30,7 +33,11 @@ class Counter(id: String) extends PersistentActor {
     case Decrement(_)   => persist(CounterChanged(-1))(updateState)
     case Get(_)         => sender() ! count
     case ReceiveTimeout => context.parent ! Passivate(stopMessage = Stop)
-    case Stop(_)        => context.stop(self)
+    case Stop(_)        => {
+      println(s"STOPPING: $persistenceId!! ")
+      saveSnapshot(count)
+      context.stop(self)
+    }
   }
 }
 
