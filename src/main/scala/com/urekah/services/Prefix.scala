@@ -4,31 +4,58 @@ package services
 import models.Contact
 import utils.UUID
 
-import akka.actor.{ActorRef, Props}
-import akka.persistence.{PersistentActor, RecoveryCompleted}
+import akka.actor.{ActorRef, Props, PoisonPill, ReceiveTimeout}
+import akka.persistence._
 import akka.cluster.sharding.ShardRegion
+import scala.collection.immutable.Map
 
 
 class Prefix extends PersistentActor {
   import Prefix.Protocol._
 
-  override def persistenceId = "Prefix" + self.path.name
+  override def persistenceId: String = "Prefix" + self.path.name
 
   override def receiveRecover: Receive = {
-    var contacts: List[(UUID[Contact], String, ActorRef)] = List();
+    var state = Map[UUID[Contact], (String, ActorRef)]();
     {
-        case RecoveryCompleted => context.become(ready(contacts))
-        case evt =>
+        case RecoveryCompleted => context.become(ready(state))
+        case SnapshotOffer(_, snapshot: Map[UUID[Contact], (String, ActorRef)]) =>
+          state = snapshot
+        case evt: Command => state = updateState(evt, state)
     }
   }
 
   override def receiveCommand: Receive = {
-    case Search => ""
+    case search: Search =>
+      persist(search) { evt =>
+        var state = Map.empty[UUID[Contact], (String, ActorRef)];
+        context.become(ready(state))
+        sender ! state
+      }
+    case ReceiveTimeout =>
+      context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
   }
 
-  private def ready(contacts: List[(UUID[Contact], String, ActorRef)] = List()): Receive = {
-    case Search(_) => sender() ! contacts
+  private def ready(state: Map[UUID[Contact], (String, ActorRef)]): Receive = {
+    case Search(_) => sender() ! state
+    case evt: Command => persist(evt) { evt =>
+      val nState = updateState(evt, state)
+      context.become(ready(nState))
+      sender ! nState
+    }
+    case SaveSnapshotSuccess =>
+      context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
+    case ReceiveTimeout =>
+      saveSnapshot(state)
   }
+
+  private def updateState(evt: Command, state: Map[UUID[Contact], (String, ActorRef)]) =
+    evt match {
+      case AddEntry(_, id: UUID[Contact], name, manager) =>
+        state + ((id, (name, manager)))
+      case RemoveEntry(_, id) => state - id
+      case _ => state
+    }
 }
 
 
@@ -45,7 +72,7 @@ object Prefix {
     case Search(prefix)   => (math.abs(prefix.hashCode) % 100).toString
   }
 
-  def props() = Props(classOf[Prefix])
+  def props = Props[Prefix]
 
   object Protocol {
     sealed trait Command extends Product with Serializable {
@@ -53,12 +80,12 @@ object Prefix {
     }
 
     final case class Search(prefix: String) extends Command
-    final case class Add(
+    final case class AddEntry(
         prefix: String,
         id: UUID[Contact],
         name: String,
         manager: ActorRef) extends Command
-    final case class Remove(
+    final case class RemoveEntry(
         prefix: String,
         id: UUID[Contact]) extends Command
   }
