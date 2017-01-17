@@ -4,9 +4,9 @@ package services
 import models.Contact
 import utils.UUID
 
-import akka.actor._
-import akka.persistence._
-import akka.cluster.sharding.ShardRegion.Passivate
+import akka.actor.{ActorRef, Props, ReceiveTimeout, PoisonPill}
+import akka.persistence.{PersistentActor, RecoveryCompleted}
+import akka.cluster.sharding.ShardRegion
 
 import cats.syntax.option._
 
@@ -35,7 +35,7 @@ class ContactManager(id: UUID[Contact]) extends PersistentActor {
         sender ! state
       }
     case ReceiveTimeout =>
-      context.parent ! Passivate(stopMessage = PoisonPill)
+      context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
   }
 
   private def ready(state: Contact): Receive = {
@@ -61,7 +61,7 @@ class ContactManager(id: UUID[Contact]) extends PersistentActor {
         sender ! nState
       }
     case ReceiveTimeout =>
-      context.parent ! Passivate(stopMessage = PoisonPill)
+      context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
   }
 
   private def updateState(evt: Any, state: Contact): Contact =
@@ -76,8 +76,19 @@ class ContactManager(id: UUID[Contact]) extends PersistentActor {
 }
 
 object ContactManager {
+  import Protocol._
 
-  def props(id: UUID[Contact]) = Props(new ContactManager(id))
+  def shardName: String = "Contacts"
+
+  def idExtractor: ShardRegion.ExtractEntityId = {
+    case msg @ Get(id) => (id.value.toString, msg)
+  }
+
+  def shardResolver: ShardRegion.ExtractShardId = {
+    case msg @ Get(id) => (math.abs(id.value.toString.hashCode) % 100).toString
+  }
+
+  def props = Props(new ContactManager(UUID.random[Contact]))
 
   object Protocol {
 
