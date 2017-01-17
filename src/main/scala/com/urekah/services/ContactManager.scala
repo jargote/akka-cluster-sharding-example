@@ -89,6 +89,8 @@ object ContactManager {
   }
 
   def props = Props(new ContactManager(UUID.random[Contact]))
+  
+  def props(id: UUID[Contact]) = Props(new ContactManager(id))
 
   object Protocol {
 
