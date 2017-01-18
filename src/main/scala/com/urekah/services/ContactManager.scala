@@ -10,8 +10,9 @@ import akka.cluster.sharding.ShardRegion
 
 import cats.syntax.option._
 
-class ContactManager(id: UUID[Contact]) extends PersistentActor {
+class ContactManager(index: ActorRef, id: UUID[Contact]) extends PersistentActor {
   import ContactManager.Protocol._
+  import Prefix.Protocol._
 
   override def persistenceId: String = id.value.toString
 
@@ -21,8 +22,7 @@ class ContactManager(id: UUID[Contact]) extends PersistentActor {
       case RecoveryCompleted =>
         state.map(s => context.become(ready(s)))
       case Create(id: UUID[Contact]) =>
-        val nState = Contact(id = id)
-        state = nState.some
+        state = Contact(id = id).some
       case evt => state.map(s => updateState(evt, s))
     }
   }
@@ -39,29 +39,81 @@ class ContactManager(id: UUID[Contact]) extends PersistentActor {
   }
 
   private def ready(state: Contact): Receive = {
-    case Get(_) =>
-      println("GETTING!!")
-      sender ! state
+    case Get(_) => sender ! state
     case firstNameUpdate: UpdateFirstName =>
       persist(firstNameUpdate) { evt =>
         val nState = updateState(evt, state)
-        context.become(ready(updateState(evt, nState)))
+
+        // Building prefixes
+        val newPrefixes = nState.firstName.map(
+          fn => ContactManager.buildPrefixes(fn))
+        val oldPrefixes = state.firstName.map(
+          fn => ContactManager.buildPrefixes(fn))
+
+        context.become(ready(nState))
+
+        // Update index
+        updateIndex(newPrefixes, oldPrefixes, nState)
+
         sender ! nState
       }
     case lastNameUpdate: UpdateLastName =>
       persist(lastNameUpdate) { evt =>
         val nState = updateState(evt, state)
-        context.become(ready(updateState(evt, nState)))
+
+        // Building prefixes
+        val newPrefixes = nState.lastName.map(
+          ln => ContactManager.buildPrefixes(ln))
+        val oldPrefixes = state.lastName.map(
+          ln => ContactManager.buildPrefixes(ln))
+
+        context.become(ready(nState))
+
+        // Update index
+        updateIndex(newPrefixes, oldPrefixes, nState)
+
         sender() ! nState
       }
     case phoneNumberUpdate: UpdatePhoneNumber =>
       persist(phoneNumberUpdate) { evt =>
         val nState = updateState(evt, state)
-        context.become(ready(updateState(evt, nState)))
+
+        // Building prefixes
+        val newPrefixes = nState.phoneNumber.map(
+          pn => ContactManager.buildPrefixes(pn))
+        val oldPrefixes = state.phoneNumber.map(
+          pn => ContactManager.buildPrefixes(pn))
+
+        // Update actor state
+        context.become(ready(nState))
+
+        // Update index
+        updateIndex(newPrefixes, oldPrefixes, nState)
+
         sender ! nState
       }
     case ReceiveTimeout =>
       context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
+  }
+
+  private def updateIndex(newPrefixes: Option[Set[String]],
+     oldPrefixes: Option[Set[String]], state: Contact) = {
+    val contactName =
+        state.firstName.getOrElse("") + state.lastName.getOrElse("")
+
+    newPrefixes.map { nps =>
+      // Adding new prefixes from index
+      nps foreach { prefix =>
+        index ! AddEntry(prefix, state.id, contactName, self)
+      }
+
+      // Deleting old prefixes from index
+      oldPrefixes.map {
+        _.diff(nps) foreach { prefix =>
+          index ! RemoveEntry(prefix, state.id)
+        }
+      }
+    }
   }
 
   private def updateState(evt: Any, state: Contact): Contact =
@@ -88,9 +140,17 @@ object ContactManager {
     case msg @ Get(id) => (math.abs(id.value.toString.hashCode) % 100).toString
   }
 
-  def props = Props(new ContactManager(UUID.random[Contact]))
-  
-  def props(id: UUID[Contact]) = Props(new ContactManager(id))
+  def props(index: ActorRef) = Props(
+      new ContactManager(index, UUID.random[Contact]))
+
+  def props(index: ActorRef, id: UUID[Contact]) = Props(
+      new ContactManager(index, id))
+
+  def buildPrefixes(text: String): Set[String] = {
+    1 until (text.length + 1) map {
+      i => text.take(i).toString.toLowerCase
+    } toSet
+  }
 
   object Protocol {
 
