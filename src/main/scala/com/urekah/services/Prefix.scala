@@ -75,7 +75,9 @@ object Prefix {
   def props = Props[Prefix]
 
   object Protocol {
-    sealed trait Command extends Product with Serializable {
+    import utils.{Protocol => GenProto}
+
+    sealed trait Command extends GenProto.Command {
       def prefix: String
     }
 
@@ -88,5 +90,10 @@ object Prefix {
     final case class RemoveEntry(
         prefix: String,
         id: UUID[Contact]) extends Command
+    final case class SearchResult(
+      prefix: String,
+      cmd: Command,
+      data: Seq[(UUID[Contact], String, ActorRef)]) extends Command
+        with GenProto.Result[Seq[(UUID[Contact], String, ActorRef)]]
   }
 }
