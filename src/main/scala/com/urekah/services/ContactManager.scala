@@ -153,11 +153,9 @@ object ContactManager {
   }
 
   object Protocol {
+    import utils.{Protocol => GenProto}
 
-    sealed trait Command
-        extends Product
-        with Serializable
-        with Contact.Audit
+    sealed trait Command extends GenProto.Command with Contact.Audit
 
     final case class Create(
         id: UUID[Contact]) extends Command
