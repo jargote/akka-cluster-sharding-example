@@ -27,7 +27,7 @@ class PrefixSpec
 
     val prefix = system.actorOf(Prefix.props)
     val aContactId = UUID.random[Contact]
-    val aContact = system.actorOf(ContactManager.props(aContactId))
+    val aContact = system.actorOf(ContactManager.props(prefix, aContactId))
 
     "#Search a Prefix" in {
       prefix ! Search("foo")
