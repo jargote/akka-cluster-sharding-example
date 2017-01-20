@@ -34,7 +34,7 @@ object Application {
         settings = ClusterShardingSettings(system),
         extractEntityId = ContactManager.idExtractor,
         extractShardId = ContactManager.shardResolver)
-      val directory = system.actorOf(Props[Directory])
+      val directory = system.actorOf(Props(new Directory(index, contacts)))
 
       if (port != "2551" && port != "2552")
         system.actorOf(Props(new Bot(index, contacts)), "bot")
