@@ -1,3 +1,3 @@
-# akka-cluster-sharding-example
+# distributed-contacts-directory
 
-An example to illustrate akka.cluster.sharding usage 
+An example app to illustrate akka.cluster.sharding usage 

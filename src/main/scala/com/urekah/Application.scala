@@ -1,14 +1,11 @@
-package com
-package urekah
+package com.urekah
 
-import services.{Bot, Prefix, ContactManager}
+import services.{Bot, Directory, Prefix, ContactManager}
 
 import akka.actor.{ActorPath, ActorSystem, Props}
 import akka.cluster.sharding.{ClusterSharding, ClusterShardingSettings}
 
 import com.typesafe.config.ConfigFactory
-
-
 
 object Application {
   def main(args: Array[String]): Unit = {
@@ -37,9 +34,10 @@ object Application {
         settings = ClusterShardingSettings(system),
         extractEntityId = ContactManager.idExtractor,
         extractShardId = ContactManager.shardResolver)
+      val directory = system.actorOf(Props[Directory])
 
-      // if (port != "2551" && port != "2552")
-        // system.actorOf(Props[Bot], "bot")
+      if (port != "2551" && port != "2552")
+        system.actorOf(Props(new Bot(index, contacts)), "bot")
     }
   }
 }

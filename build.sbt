@@ -2,10 +2,9 @@ import com.typesafe.sbt.SbtMultiJvm
 import com.typesafe.sbt.SbtMultiJvm.MultiJvmKeys.MultiJvm
 
 val project = Project(
-  id = "cluster-sharding",
   base = file("."),
   settings = Defaults.coreDefaultSettings ++ SbtMultiJvm.multiJvmSettings ++ Seq(
-    name := """cluster-sharding""",
+    name := """distributed-contacts-directory""",
     version := "1.0",
     scalaVersion := "2.11.8",
     resolvers += Resolver.jcenterRepo,
