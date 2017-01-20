@@ -1,5 +1,4 @@
-package com.urekah
-package utils
+package com.urekah.utils
 
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 

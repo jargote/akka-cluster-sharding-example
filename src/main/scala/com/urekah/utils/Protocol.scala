@@ -1,5 +1,4 @@
-package com.urekah
-package utils
+package com.urekah.utils
 
 object Protocol {
   trait Command extends Product with Serializable
