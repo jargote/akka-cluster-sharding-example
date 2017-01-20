@@ -15,15 +15,15 @@ class Prefix extends PersistentActor {
 
   context.setReceiveTimeout(30.seconds)
 
-  override def persistenceId: String = "Prefix" + self.path.name
+  override def persistenceId: String = self.path.name
 
   override def receiveRecover: Receive = {
     var state = Map[UUID[Contact], (String, ActorRef)]();
     {
-        case RecoveryCompleted => context.become(ready(state))
-        case SnapshotOffer(_, snapshot: Map[UUID[Contact], (String, ActorRef)]) =>
-          state = snapshot
-        case cmd: Command => state = updateState(cmd, state)
+      case RecoveryCompleted => context.become(ready(state))
+      case SnapshotOffer(_, snapshot: Map[UUID[Contact], (String, ActorRef)]) =>
+        state = snapshot
+      case cmd: Command => state = updateState(cmd, state)
     }
   }
 
@@ -75,10 +75,7 @@ object Prefix {
   }
 
   def shardResolver: ShardRegion.ExtractShardId = {
-    case cmd: Command =>
-      val shardId = (math.abs(cmd.prefix.hashCode) % 100).toString
-      // println(s"PREFIX -> ROUTING TO SHARD -> $shardId")
-      shardId
+    case cmd: Command => (math.abs(cmd.prefix.hashCode) % 100).toString
   }
 
   def props = Props[Prefix]

@@ -37,8 +37,8 @@ class DirectorySpec
     val probe = TestProbe()
     val mockIndexAndContacts = system.actorOf(Props(new MockActor(aContact)))
     val parent = system.actorOf(Props(new Actor {
-      val child = context.actorOf(Props(
-        new Directory(mockIndexAndContacts, mockIndexAndContacts)))
+      val child = context.actorOf(
+        Props(new Directory(mockIndexAndContacts, mockIndexAndContacts)))
       def receive = {
         case msg if sender == child => probe.ref forward msg
         case msg => child forward msg
@@ -47,12 +47,12 @@ class DirectorySpec
 
     "#SearchById" in {
       probe.send(parent, SearchById(anId))
-      probe.expectMsg(anId.value.toString + " -> FooBaz BarMan +0000000")
+      probe.expectMsg(aContact)
     }
 
     "#SearchByPrefix" in {
       probe.send(parent, SearchByPrefix("foo"))
-      probe.expectMsg(List(anId.value.toString + " -> FooBazBarMan"))
+      probe.expectMsg(List("foo -> " + anId.value.toString + " -> FooBaz BarMan"))
     }
   }
 }
@@ -63,7 +63,7 @@ class MockActor(contact: Contact) extends Actor {
     case Get(_) =>
       sender ! contact
     case cmd @ Search(prefix) =>
-      sender ! SearchResult(prefix, cmd,
-          Seq((contact.id, contact.firstName.get + contact.lastName.get, self)))
+      sender ! SearchResult(prefix, cmd, Seq(
+        (contact.id, contact.fullname, self)))
   }
 }

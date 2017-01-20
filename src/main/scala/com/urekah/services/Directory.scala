@@ -1,34 +1,26 @@
-package com.urekah
-package services
+package com.urekah.services
 
-import models.Contact
-import utils.Protocol.Command
-import utils.UUID
+import com.urekah.models.Contact
+import com.urekah.utils.Protocol.Command
+import com.urekah.utils.UUID
 
 import akka.actor.{Actor, ActorRef, ActorLogging}
+import akka.cluster.sharding.ClusterSharding
 
-class Directory(contacts: ActorRef, prefixes: ActorRef) extends Actor with ActorLogging {
+class Directory(index: ActorRef, contacts: ActorRef) extends Actor with ActorLogging {
   import Directory.Protocol._
   import ContactManager.Protocol.Get
   import Prefix.Protocol.{Search, SearchResult}
 
-
   def receive: Receive = {
-    case SearchById(id: UUID[Contact]) => contacts ! Get(id)
-    case SearchByPrefix(prefix: String) => prefixes ! Search(prefix)
+    case SearchById(id) => contacts ! Get(id)
+    case SearchByPrefix(prefix: String) => index ! Search(prefix)
     case SearchResult(prefix, _, data) =>
-      val results = data map {
-        case (id, name, contact) => s"${id.value.toString} -> $name"
+      context.parent ! data.map {
+        case (id: UUID[Contact], name: String, contact: ActorRef) =>
+          s"$prefix -> ${id.value.toString} -> $name"
       }
-      context.parent ! results
-    case Contact(id, firstName, lastName, phoneNumber) =>
-      val msg = Seq(firstName, lastName, phoneNumber)
-        .foldLeft(s"${id.value.toString} ->") {
-        case (str: String, Some(field: Any)) =>
-          str + " " + field.toString
-        case (str: String, _) => str
-      }
-      context.parent ! msg
+    case contact: Contact => context.parent ! contact
   }
 }
 
