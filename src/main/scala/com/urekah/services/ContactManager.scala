@@ -1,28 +1,30 @@
-package com.urekah
-package services
+package com.urekah.services
 
-import models.Contact
-import utils.UUID
+import com.urekah.models.Contact
+import com.urekah.utils.UUID
 
 import akka.actor.{ActorRef, Props, ReceiveTimeout, PoisonPill}
-import akka.persistence.{PersistentActor, RecoveryCompleted}
-import akka.cluster.sharding.ShardRegion
+import akka.persistence.{PersistentActor, RecoveryCompleted,
+  SaveSnapshotSuccess, SnapshotOffer}
+import akka.cluster.sharding.{ClusterSharding, ShardRegion}
 
 import cats.syntax.option._
+import scala.concurrent.duration._
 
 class ContactManager(index: ActorRef, id: UUID[Contact]) extends PersistentActor {
   import ContactManager.Protocol._
   import Prefix.Protocol._
 
-  override def persistenceId: String = id.value.toString
+  context.setReceiveTimeout(30.seconds)
+
+  override def persistenceId: String = self.path.name
 
   override def receiveRecover: Receive = {
     var state: Option[Contact] = None;
     {
-      case RecoveryCompleted =>
-        state.map(s => context.become(ready(s)))
-      case Create(id: UUID[Contact]) =>
-        state = Contact(id = id).some
+      case RecoveryCompleted => state.map(s => context.become(ready(s)))
+      case SnapshotOffer(meta, contact: Contact) => state = contact.some
+      case Create(id: UUID[Contact]) => state = Contact(id = id).some
       case evt => state.map(s => updateState(evt, s))
     }
   }
@@ -32,10 +34,9 @@ class ContactManager(index: ActorRef, id: UUID[Contact]) extends PersistentActor
       persist(create) { evt =>
         val state = Contact(id = create.id)
         context.become(ready(state))
-        sender ! state
+        sender() ! state
       }
-    case ReceiveTimeout =>
-      context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
+    case ReceiveTimeout => context.stop(self)
   }
 
   private def ready(state: Contact): Receive = {
@@ -55,7 +56,7 @@ class ContactManager(index: ActorRef, id: UUID[Contact]) extends PersistentActor
         // Update index
         updateIndex(newPrefixes, oldPrefixes, nState)
 
-        sender ! nState
+        sender() ! nState
       }
     case lastNameUpdate: UpdateLastName =>
       persist(lastNameUpdate) { evt =>
@@ -72,7 +73,7 @@ class ContactManager(index: ActorRef, id: UUID[Contact]) extends PersistentActor
         // Update index
         updateIndex(newPrefixes, oldPrefixes, nState)
 
-        sender() ! nState
+        sender ! nState
       }
     case phoneNumberUpdate: UpdatePhoneNumber =>
       persist(phoneNumberUpdate) { evt =>
@@ -90,27 +91,24 @@ class ContactManager(index: ActorRef, id: UUID[Contact]) extends PersistentActor
         // Update index
         updateIndex(newPrefixes, oldPrefixes, nState)
 
-        sender ! nState
+        sender() ! nState
       }
-    case ReceiveTimeout =>
-      context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
+    case SaveSnapshotSuccess => context.stop(self)
+    case ReceiveTimeout => saveSnapshot(state)
   }
 
   private def updateIndex(newPrefixes: Option[Set[String]],
-     oldPrefixes: Option[Set[String]], state: Contact) = {
-    val contactName =
-        state.firstName.getOrElse("") + state.lastName.getOrElse("")
-
+    oldPrefixes: Option[Set[String]], contact: Contact) = {
     newPrefixes.map { nps =>
       // Adding new prefixes from index
       nps foreach { prefix =>
-        index ! AddEntry(prefix, state.id, contactName, self)
+        index ! AddEntry(prefix, contact.id, contact.fullname, self)
       }
 
       // Deleting old prefixes from index
       oldPrefixes.map {
         _.diff(nps) foreach { prefix =>
-          index ! RemoveEntry(prefix, state.id)
+          index ! RemoveEntry(prefix, contact.id)
         }
       }
     }
@@ -133,18 +131,20 @@ object ContactManager {
   def shardName: String = "Contacts"
 
   def idExtractor: ShardRegion.ExtractEntityId = {
-    case msg @ Get(id) => (id.value.toString, msg)
+    case cmd: Command =>
+      (cmd.id.value.toString, cmd)
   }
 
   def shardResolver: ShardRegion.ExtractShardId = {
-    case msg @ Get(id) => (math.abs(id.value.toString.hashCode) % 100).toString
+    case cmd: Command => (
+      math.abs(cmd.id.value.toString.hashCode) % 100).toString
   }
 
   def props(index: ActorRef) = Props(
-      new ContactManager(index, UUID.random[Contact]))
+    new ContactManager(index, UUID.random[Contact]))
 
   def props(index: ActorRef, id: UUID[Contact]) = Props(
-      new ContactManager(index, id))
+    new ContactManager(index, id))
 
   def buildPrefixes(text: String): Set[String] = {
     1 until (text.length + 1) map {
@@ -153,7 +153,7 @@ object ContactManager {
   }
 
   object Protocol {
-    import utils.{Protocol => GenProto}
+    import com.urekah.utils.{Protocol => GenProto}
 
     sealed trait Command extends GenProto.Command with Contact.Audit
 

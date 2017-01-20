@@ -72,7 +72,7 @@ class ContactManagerSpec
       contactMan ! UpdateLastName(anId, lastName = newValue)
       expectMsg(Contact(
           id = anId, firstName = "FooBaz".some, lastName = newValue.some))
-      verifyPrefixes(newValue, "FooBazBarMan")
+      verifyPrefixes(newValue, "FooBaz " + newValue)
     }
 
     "#Update phone number" in {
@@ -81,7 +81,7 @@ class ContactManagerSpec
       expectMsg(Contact(
           id = anId, firstName = "FooBaz".some, lastName = "BarMan".some,
           phoneNumber = newValue.some))
-      verifyPrefixes(newValue, "FooBazBarMan")
+      verifyPrefixes(newValue, "FooBaz BarMan")
     }
 
     "remove an obsolete prefix" in {
@@ -95,7 +95,7 @@ class ContactManagerSpec
           RemoveEntry(prefix, anId)
         } toSeq) ++
         (ContactManager.buildPrefixes("B").map { prefix =>
-          AddEntry(prefix, anId, "BBarMan", contactMan)
+          AddEntry(prefix, anId, "B BarMan", contactMan)
         } toSeq):_*)
     }
   }
