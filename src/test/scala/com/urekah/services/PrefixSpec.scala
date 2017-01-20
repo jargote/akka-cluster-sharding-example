@@ -4,7 +4,7 @@ package services
 import models.Contact
 import utils.UUID
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, Actor}
 import akka.persistence._
 import akka.testkit.{TestKit, ImplicitSender, TestProbe}
 
@@ -26,29 +26,26 @@ class PrefixSpec
     import Prefix.Protocol._
 
     val prefix = system.actorOf(Prefix.props)
-    val aContactId = UUID.random[Contact]
-    val aContact = system.actorOf(ContactManager.props(prefix, aContactId))
+    val anId = UUID.random[Contact]
+    val dummyActor = TestProbe().ref
 
     "#Search a Prefix" in {
-      prefix ! Search("foo")
-      expectMsg(Map.empty)
+      val cmd = Search("foo")
+      prefix ! cmd
+      expectMsg(SearchResult("foo", cmd, Seq()))
     }
 
     "#AddEntry" in {
-      prefix ! AddEntry("foo", aContactId, "Foo Bar", aContact)
-      expectMsgPF() {
-        case result: Map[_, _] =>
-          result.keys should contain (aContactId)
-          result.values should contain (("Foo Bar", aContact))
-      }
+      val cmd = AddEntry("foo", anId, "Foo Bar", dummyActor)
+      prefix ! cmd
+      expectMsg(SearchResult("foo", cmd,
+          Seq((anId, "Foo Bar", dummyActor))))
     }
 
     "#RemoveEntry" in {
-      prefix ! RemoveEntry("foo", aContactId)
-      expectMsgPF() {
-        case result: Map[_, _] =>
-          result.keys shouldNot contain (aContactId)
-      }
+      val cmd = RemoveEntry("foo", anId)
+      prefix ! cmd
+      expectMsg(SearchResult("foo", cmd, Seq()))
     }
   }
 }

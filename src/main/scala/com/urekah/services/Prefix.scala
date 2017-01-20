@@ -1,17 +1,19 @@
-package com.urekah
-package services
+package com.urekah.services
 
-import models.Contact
-import utils.UUID
+import com.urekah.models.Contact
+import com.urekah.utils.UUID
 
 import akka.actor.{ActorRef, Props, PoisonPill, ReceiveTimeout}
 import akka.persistence._
 import akka.cluster.sharding.ShardRegion
-import scala.collection.immutable.Map
 
+import scala.collection.immutable.Map
+import scala.concurrent.duration._
 
 class Prefix extends PersistentActor {
   import Prefix.Protocol._
+
+  context.setReceiveTimeout(30.seconds)
 
   override def persistenceId: String = "Prefix" + self.path.name
 
@@ -21,7 +23,7 @@ class Prefix extends PersistentActor {
         case RecoveryCompleted => context.become(ready(state))
         case SnapshotOffer(_, snapshot: Map[UUID[Contact], (String, ActorRef)]) =>
           state = snapshot
-        case evt: Command => state = updateState(evt, state)
+        case cmd: Command => state = updateState(cmd, state)
     }
   }
 
@@ -32,21 +34,19 @@ class Prefix extends PersistentActor {
         context.become(ready(state))
         sender ! state
       }
-    case ReceiveTimeout =>
-      context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
+    case ReceiveTimeout => context.stop(self)
   }
 
   private def ready(state: Map[UUID[Contact], (String, ActorRef)]): Receive = {
-    case Search(_) => sender() ! state
-    case evt: Command => persist(evt) { evt =>
-      val nState = updateState(evt, state)
+    case cmd @ Search(prefix) =>
+      sender ! SearchResult(prefix, cmd, buildResults(state))
+    case cmd: Command => persist(cmd) { cmd =>
+      val nState = updateState(cmd, state)
       context.become(ready(nState))
-      sender ! nState
+      sender ! SearchResult(cmd.prefix, cmd, buildResults(nState))
     }
-    case SaveSnapshotSuccess =>
-      context.parent ! ShardRegion.Passivate(stopMessage = PoisonPill)
-    case ReceiveTimeout =>
-      saveSnapshot(state)
+    case SaveSnapshotSuccess => context.stop(self)
+    case ReceiveTimeout => saveSnapshot(state)
   }
 
   private def updateState(evt: Command, state: Map[UUID[Contact], (String, ActorRef)]) =
@@ -56,6 +56,12 @@ class Prefix extends PersistentActor {
       case RemoveEntry(_, id) => state - id
       case _ => state
     }
+
+  private def buildResults(state: Map[UUID[Contact], (String, ActorRef)]) =
+    state.map {
+      case (id: UUID[_], (name: String, actor: ActorRef)) =>
+        (id, name, actor)
+    } toSeq
 }
 
 
@@ -65,17 +71,20 @@ object Prefix {
   def shardName = "Index"
 
   def idExtractor: ShardRegion.ExtractEntityId = {
-    case msg @ Search(prefix) => (prefix, msg)
+    case cmd: Command => (cmd.prefix, cmd)
   }
 
   def shardResolver: ShardRegion.ExtractShardId = {
-    case Search(prefix)   => (math.abs(prefix.hashCode) % 100).toString
+    case cmd: Command =>
+      val shardId = (math.abs(cmd.prefix.hashCode) % 100).toString
+      // println(s"PREFIX -> ROUTING TO SHARD -> $shardId")
+      shardId
   }
 
   def props = Props[Prefix]
 
   object Protocol {
-    import utils.{Protocol => GenProto}
+    import com.urekah.utils.{Protocol => GenProto}
 
     sealed trait Command extends GenProto.Command {
       def prefix: String
