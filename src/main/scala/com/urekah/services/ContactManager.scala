@@ -6,7 +6,7 @@ import com.urekah.utils.UUID
 import akka.actor.{ActorRef, Props, ReceiveTimeout, PoisonPill}
 import akka.persistence.{PersistentActor, RecoveryCompleted,
   SaveSnapshotSuccess, SnapshotOffer}
-import akka.cluster.sharding.{ClusterSharding, ShardRegion}
+import akka.cluster.sharding.ShardRegion
 
 import cats.syntax.option._
 import scala.concurrent.duration._
